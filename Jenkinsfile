@@ -11,6 +11,8 @@ pipeline {
         DOCKERHUB_USER = 'devaraj74'
         FRONTEND_IMAGE = 'pulsetask-frontend'
         BACKEND_IMAGE = 'pulsetask-backend'
+        IMAGE_TAG = ''
+        SKIP_PIPELINE = 'false'
     }
 
     triggers {
@@ -18,35 +20,45 @@ pipeline {
     }
 
     stages {
-stage('Checkout') {
-    steps {
-        checkout scm
-        script {
-            env.IMAGE_TAG = sh(
-                script: 'git rev-parse --short=7 HEAD',
-                returnStdout: true
-            ).trim()
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.IMAGE_TAG = sh(
+                        script: 'git rev-parse --short=7 HEAD',
+                        returnStdout: true
+                    ).trim()
 
-            if (!env.IMAGE_TAG) {
-                error 'IMAGE_TAG is empty. Cannot build Docker images.'
+                    def commitMessage = sh(
+                        script: 'git log -1 --pretty=%B',
+                        returnStdout: true
+                    ).trim()
+
+                    if (commitMessage.contains('[skip ci]')) {
+                        env.SKIP_PIPELINE = 'true'
+                        echo 'Jenkins manifest commit detected. Skipping build stages.'
+                    }
+                }
             }
-
-            echo "Docker image tag: ${env.IMAGE_TAG}"
         }
-    }
-}
 
         stage('Frontend Build and Test') {
-    steps {
-        dir('frontend') {
-            sh 'npm ci'
-            sh 'npm run lint'
-            sh 'npm run build'
+            when {
+                expression { env.SKIP_PIPELINE != 'true' }
+            }
+            steps {
+                dir('frontend') {
+                    sh 'npm ci'
+                    sh 'npm run lint'
+                    sh 'npm run build'
+                }
+            }
         }
-    }
-}
 
         stage('Backend Build and Test') {
+            when {
+                expression { env.SKIP_PIPELINE != 'true' }
+            }
             steps {
                 dir('backend') {
                     sh 'chmod +x mvnw'
@@ -55,19 +67,23 @@ stage('Checkout') {
             }
         }
 
-      
-stage('SonarQube Analysis') {
-    steps {
-        dir('backend') {
-            withSonarQubeEnv('SonarQube') {
-                sh './mvnw -B org.sonarsource.scanner.maven:sonar-maven-plugin:5.2.0.4988:sonar -Dsonar.projectKey=pulsetask'
+        stage('SonarQube Analysis') {
+            when {
+                expression { env.SKIP_PIPELINE != 'true' }
+            }
+            steps {
+                dir('backend') {
+                    withSonarQubeEnv('SonarQube') {
+                        sh './mvnw -B org.sonarsource.scanner.maven:sonar-maven-plugin:5.7.0.6970:sonar -Dsonar.projectKey=pulsetask'
+                    }
+                }
             }
         }
-    }
-}
-
 
         stage('Quality Gate') {
+            when {
+                expression { env.SKIP_PIPELINE != 'true' }
+            }
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
                     script {
@@ -81,6 +97,9 @@ stage('SonarQube Analysis') {
         }
 
         stage('Build Docker Images') {
+            when {
+                expression { env.SKIP_PIPELINE != 'true' }
+            }
             steps {
                 sh '''
                     docker build -t ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${IMAGE_TAG} ./frontend
@@ -90,6 +109,9 @@ stage('SonarQube Analysis') {
         }
 
         stage('Push Docker Images') {
+            when {
+                expression { env.SKIP_PIPELINE != 'true' }
+            }
             steps {
                 withCredentials([
                     usernamePassword(
@@ -108,6 +130,51 @@ stage('SonarQube Analysis') {
                 }
             }
         }
+
+        stage('Update Kubernetes Manifests') {
+            when {
+                expression { env.SKIP_PIPELINE != 'true' }
+            }
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'github-write-creds',
+                        usernameVariable: 'GH_USER',
+                        passwordVariable: 'GH_TOKEN'
+                    )
+                ]) {
+                    sh '''
+                        set -eu
+
+                        sed -i -E \
+                          "s|(image: devaraj74/pulsetask-frontend:).*|\\1${IMAGE_TAG}|" \
+                          kubernetes/base/frontend.yaml
+
+                        sed -i -E \
+                          "s|(image: devaraj74/pulsetask-backend:).*|\\1${IMAGE_TAG}|" \
+                          kubernetes/base/backend.yaml
+
+                        git config user.name "PulseTask Jenkins"
+                        git config user.email "jenkins@users.noreply.github.com"
+
+                        git add kubernetes/base/frontend.yaml kubernetes/base/backend.yaml
+
+                        if git diff --cached --quiet; then
+                            echo "Image tags are already up to date."
+                        else
+                            git commit -m "Update PulseTask images to ${IMAGE_TAG} [skip ci]"
+
+                            AUTH=$(printf '%s' "$GH_USER:$GH_TOKEN" | base64 | tr -d '\\n')
+
+                            git -c http.extraheader="AUTHORIZATION: basic $AUTH" \
+                                push origin HEAD:main
+
+                            unset AUTH
+                        fi
+                    '''
+                }
+            }
+        }
     }
 
     post {
@@ -115,7 +182,13 @@ stage('SonarQube Analysis') {
             echo 'PulseTask CI pipeline finished.'
         }
         success {
-            echo "Images published with tag ${IMAGE_TAG}"
+            script {
+                if (env.SKIP_PIPELINE == 'true') {
+                    echo 'Manifest-only commit skipped successfully.'
+                } else {
+                    echo "Images published and Kubernetes manifests updated to ${env.IMAGE_TAG}"
+                }
+            }
         }
     }
 }
