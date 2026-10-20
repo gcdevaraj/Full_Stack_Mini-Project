@@ -11,6 +11,7 @@ pipeline {
         DOCKERHUB_USER = 'devaraj74'
         FRONTEND_IMAGE = 'pulsetask-frontend'
         BACKEND_IMAGE = 'pulsetask-backend'
+        IMAGE_TAG = ''
     }
 
     triggers {
@@ -18,33 +19,27 @@ pipeline {
     }
 
     stages {
-stage('Checkout') {
-    steps {
-        checkout scm
-        script {
-            env.IMAGE_TAG = sh(
-                script: 'git rev-parse --short=7 HEAD',
-                returnStdout: true
-            ).trim()
-
-            if (!env.IMAGE_TAG) {
-                error 'IMAGE_TAG is empty. Cannot build Docker images.'
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.IMAGE_TAG = sh(
+                        script: 'git rev-parse --short=7 HEAD',
+                        returnStdout: true
+                    ).trim()
+                }
             }
-
-            echo "Docker image tag: ${env.IMAGE_TAG}"
         }
-    }
-}
 
         stage('Frontend Build and Test') {
-    steps {
-        dir('frontend') {
-            sh 'npm ci'
-            sh 'npm run lint'
-            sh 'npm run build'
+            steps {
+                dir('frontend') {
+                    sh 'npm ci'
+                    sh 'npm run lint'
+                    sh 'npm run build'
+                }
+            }
         }
-    }
-}
 
         stage('Backend Build and Test') {
             steps {
@@ -55,17 +50,15 @@ stage('Checkout') {
             }
         }
 
-      
-stage('SonarQube Analysis') {
-    steps {
-        dir('backend') {
-            withSonarQubeEnv('SonarQube') {
-                sh './mvnw -B org.sonarsource.scanner.maven:sonar-maven-plugin:5.2.0.4988:sonar -Dsonar.projectKey=pulsetask'
+        stage('SonarQube Analysis') {
+            steps {
+                dir('backend') {
+                    withSonarQubeEnv('SonarQube') {
+                        sh './mvnw -B sonar:sonar -Dsonar.projectKey=pulsetask'
+                    }
+                }
             }
         }
-    }
-}
-
 
         stage('Quality Gate') {
             steps {
