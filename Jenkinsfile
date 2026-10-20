@@ -20,16 +20,30 @@ pipeline {
     }
 
     stages {
-       stage('Checkout') {
+      stage('Checkout') {
     steps {
         checkout scm
         script {
+            def commitMessage = sh(
+                script: 'git log -1 --pretty=%B',
+                returnStdout: true
+            ).trim()
+
+            env.SKIP_PIPELINE = 'false'
+
+            if (commitMessage.contains('[skip ci]')) {
+                env.SKIP_PIPELINE = 'true'
+                echo 'Skipping pipeline for automated manifest update.'
+            }
+
             env.IMAGE_TAG = sh(
                 script: 'git rev-parse --short=7 HEAD',
                 returnStdout: true
             ).trim()
 
             echo "Resolved Git commit: ${env.IMAGE_TAG}"
+            echo "Commit message: ${commitMessage}"
+            echo "Skip pipeline: ${env.SKIP_PIPELINE}"
         }
     }
 }
