@@ -20,34 +20,34 @@ pipeline {
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
+       
+stage('Checkout') {
+    steps {
+        script {
+            def commitMessage = sh(
+                script: 'git log -1 --pretty=%B',
+                returnStdout: true
+            ).trim()
 
-                script {
-                    def commitMessage = sh(
-                        script: 'git log -1 --pretty=%B',
-                        returnStdout: true
-                    ).trim()
+            def commitSha = sh(
+                script: 'git rev-parse HEAD',
+                returnStdout: true
+            ).trim()
 
-                    env.SKIP_PIPELINE =
-                        commitMessage.contains('[skip ci]') ? 'true' : 'false'
-
-                    env.IMAGE_TAG = sh(
-                        script: 'git rev-parse --short=7 HEAD',
-                        returnStdout: true
-                    ).trim()
-
-                    if (!env.IMAGE_TAG) {
-                        error 'Could not determine Git commit SHA.'
-                    }
-
-                    echo "Commit message: ${commitMessage}"
-                    echo "Resolved Git commit: ${env.IMAGE_TAG}"
-                    echo "Skip pipeline: ${env.SKIP_PIPELINE}"
-                }
+            if (!commitSha) {
+                error 'Could not determine Git commit SHA.'
             }
+
+            env.IMAGE_TAG = commitSha.take(7)
+            env.SKIP_PIPELINE = commitMessage.contains('[skip ci]') ? 'true' : 'false'
+
+            echo "Commit message: ${commitMessage}"
+            echo "Resolved Git commit: ${env.IMAGE_TAG}"
+            echo "Skip pipeline: ${env.SKIP_PIPELINE}"
         }
+    }
+}
+
 
         stage('Frontend Build and Test') {
             when {
