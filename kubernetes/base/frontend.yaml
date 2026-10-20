@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: devaraj74/pulsetask-frontend:21332d2
+          image: devaraj74/pulsetask-frontend:6f83952
           ports:
             - containerPort: 80
           readinessProbe:
