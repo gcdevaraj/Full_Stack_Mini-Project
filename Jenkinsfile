@@ -106,28 +106,34 @@ stage('Checkout') {
             }
         }
 
-        stage('Build Docker Images') {
-            when {
-                expression { env.SKIP_PIPELINE != 'true' }
+
+stage('Build Docker Images') {
+    when {
+        expression { env.SKIP_PIPELINE != 'true' }
+    }
+    steps {
+        script {
+            def tag = sh(
+                script: 'git rev-parse --short=7 HEAD',
+                returnStdout: true
+            ).trim()
+
+            if (!(tag ==~ /[0-9a-fA-F]{7}/)) {
+                error "Git returned an invalid Docker image tag: '${tag}'"
             }
-            steps {
-                script {
-                    def tag = env.IMAGE_TAG
 
-                    if (!(tag ==~ /[0-9a-fA-F]{7}/)) {
-                        error "Refusing to build with invalid image tag: '${tag}'"
-                    }
+            env.IMAGE_TAG = tag
+            echo "Building Docker images with tag: ${tag}"
 
-                    echo "Building images with tag: ${tag}"
-
-                    sh """
-                        set -eu
-                        docker build -t ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${tag} ./frontend
-                        docker build -t ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${tag} ./backend
-                    """
-                }
-            }
+            sh """
+                set -eu
+                docker build -t ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${tag} ./frontend
+                docker build -t ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${tag} ./backend
+            """
         }
+    }
+}
+
 
         stage('Push Docker Images') {
             when {
@@ -135,11 +141,14 @@ stage('Checkout') {
             }
             steps {
                 script {
-                    def tag = env.IMAGE_TAG
+                  def tag = sh(
+    script: 'git rev-parse --short=7 HEAD',
+    returnStdout: true
+).trim()
 
-                    if (!(tag ==~ /[0-9a-fA-F]{7}/)) {
-                        error "Refusing to push with invalid image tag: '${tag}'"
-                    }
+if (!(tag ==~ /[0-9a-fA-F]{7}/)) {
+    error "Invalid Git image tag: '${tag}'"
+}
 
                     echo "Pushing images with tag: ${tag}"
 
@@ -172,11 +181,14 @@ stage('Checkout') {
             }
             steps {
                 script {
-                    def tag = env.IMAGE_TAG
+            def tag = sh(
+    script: 'git rev-parse --short=7 HEAD',
+    returnStdout: true
+).trim()
 
-                    if (!(tag ==~ /[0-9a-fA-F]{7}/)) {
-                        error "Refusing to update manifests with invalid tag: '${tag}'"
-                    }
+if (!(tag ==~ /[0-9a-fA-F]{7}/)) {
+    error "Invalid Git image tag: '${tag}'"
+}
 
                     echo "Updating manifests to tag: ${tag}"
 
