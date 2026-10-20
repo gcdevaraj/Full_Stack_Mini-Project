@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pulsetask-backend
+  namespace: pulsetask
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pulsetask-backend
+  template:
+    metadata:
+      labels:
+        app: pulsetask-backend
+    spec:
+      containers:
+        - name: backend
+          image: devaraj74/pulsetask-backend:initial
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:h2:file:/data/taskmasterdb
+            - name: SPRING_DATASOURCE_USERNAME
+              value: sa
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: password
+            - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+              value: update
+          volumeMounts:
+            - name: h2-data
+              mountPath: /data
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 200m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+      volumes:
+        - name: h2-data
+          persistentVolumeClaim:
+            claimName: pulsetask-h2-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pulsetask-backend
+  namespace: pulsetask
+spec:
+  type: ClusterIP
+  selector:
+    app: pulsetask-backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

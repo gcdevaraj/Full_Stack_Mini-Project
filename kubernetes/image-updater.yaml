@@ -1,0 +1,34 @@
+
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: pulsetask-image-updater
+  namespace: argocd
+spec:
+  writeBackConfig:
+    method: git
+    gitConfig:
+      repository: https://github.com/gcdevaraj/Full_Stack_Mini-Project.git
+      branch: main
+      writeBackTarget: kustomization:kubernetes/base/kustomization.yaml
+
+  applicationRefs:
+    - namePattern: pulsetask
+      images:
+        - alias: frontend
+          imageName: devaraj74/pulsetask-frontend:initial
+          commonUpdateSettings:
+            updateStrategy: newest-build
+            allowTags: "regexp:^[a-f0-9]{7}$"
+          manifestTargets:
+            kustomize:
+              name: devaraj74/pulsetask-frontend
+
+        - alias: backend
+          imageName: devaraj74/pulsetask-backend:initial
+          commonUpdateSettings:
+            updateStrategy: newest-build
+            allowTags: "regexp:^[a-f0-9]{7}$"
+          manifestTargets:
+            kustomize:
+              name: devaraj74/pulsetask-backend

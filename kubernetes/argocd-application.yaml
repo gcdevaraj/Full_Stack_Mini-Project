@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pulsetask
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/gcdevaraj/Full_Stack_Mini-Project.git
+    targetRevision: main
+    path: kubernetes/base
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: pulsetask
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
