@@ -1,3 +1,4 @@
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,7 +16,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: devaraj74/pulsetask-frontend:initial
+          image: devaraj74/pulsetask-frontend:511a232
           ports:
             - containerPort: 80
           readinessProbe:
@@ -51,3 +52,4 @@ spec:
     - port: 80
       targetPort: 80
       nodePort: 30080
+

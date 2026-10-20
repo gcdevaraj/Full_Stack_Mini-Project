@@ -74,7 +74,8 @@ pipeline {
             steps {
                 dir('backend') {
                     withSonarQubeEnv('SonarQube') {
-                        sh './mvnw -B org.sonarsource.scanner.maven:sonar-maven-plugin:5.7.0.6970:sonar -Dsonar.projectKey=pulsetask'
+             sh './mvnw -B org.sonarsource.scanner.maven:sonar-maven-plugin:5.7.0.6970:sonar -Dsonar.projectKey=pulsetask'
+
                     }
                 }
             }
