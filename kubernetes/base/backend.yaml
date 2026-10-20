@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: devaraj74/pulsetask-backend:159bcd9
+          image: devaraj74/pulsetask-backend:b0342e8
           ports:
             - containerPort: 8080
           env:
