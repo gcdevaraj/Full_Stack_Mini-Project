@@ -21,26 +21,23 @@ pipeline {
 
     stages {
         stage('Checkout') {
-            steps {
-                checkout scm
-                script {
-                    env.IMAGE_TAG = sh(
-                        script: 'git rev-parse --short=7 HEAD',
-                        returnStdout: true
-                    ).trim()
+    steps {
+        checkout scm
 
-                    def commitMessage = sh(
-                        script: 'git log -1 --pretty=%B',
-                        returnStdout: true
-                    ).trim()
+        script {
+            env.IMAGE_TAG = sh(
+                script: 'git rev-parse --short=7 HEAD',
+                returnStdout: true
+            ).trim()
 
-                    if (commitMessage.contains('[skip ci]')) {
-                        env.SKIP_PIPELINE = 'true'
-                        echo 'Jenkins manifest commit detected. Skipping build stages.'
-                    }
-                }
+            if (!env.IMAGE_TAG?.trim()) {
+                error 'IMAGE_TAG is empty. Cannot build Docker images.'
             }
+
+            echo "Building PulseTask images with tag: ${env.IMAGE_TAG}"
         }
+    }
+}
 
         stage('Frontend Build and Test') {
             when {
@@ -98,17 +95,23 @@ pipeline {
         }
 
         stage('Build Docker Images') {
-            when {
-                expression { env.SKIP_PIPELINE != 'true' }
-            }
-            steps {
-                sh '''
-                    docker build -t ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${IMAGE_TAG} ./frontend
-                    docker build -t ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${IMAGE_TAG} ./backend
-                '''
-            }
-        }
+    when {
+        expression { env.SKIP_PIPELINE != 'true' }
+    }
+    steps {
+        sh '''
+            set -eu
 
+            if [ -z "$IMAGE_TAG" ]; then
+                echo "ERROR: IMAGE_TAG is empty"
+                exit 1
+            fi
+
+            docker build -t "${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${IMAGE_TAG}" ./frontend
+            docker build -t "${DOCKERHUB_USER}/${BACKEND_IMAGE}:${IMAGE_TAG}" ./backend
+        '''
+    }
+}
         stage('Push Docker Images') {
             when {
                 expression { env.SKIP_PIPELINE != 'true' }
