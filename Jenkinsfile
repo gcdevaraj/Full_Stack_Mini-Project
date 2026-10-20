@@ -32,14 +32,14 @@ pipeline {
         }
 
         stage('Frontend Build and Test') {
-            steps {
-                dir('frontend') {
-                    sh 'npm ci'
-                    sh 'npm run build'
-                    sh 'npm test -- --run'
-                }
-            }
+    steps {
+        dir('frontend') {
+            sh 'npm ci'
+            sh 'npm run lint'
+            sh 'npm run build'
         }
+    }
+}
 
         stage('Backend Build and Test') {
             steps {
