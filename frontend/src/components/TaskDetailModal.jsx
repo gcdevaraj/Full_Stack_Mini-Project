@@ -356,7 +356,7 @@ export default function TaskDetailModal({
 
                     <div style={{ display: 'flex', gap: '6px' }}>
                       <a 
-                        href={`http://localhost:8080/api/attachments/download/${att.storagePath}`}
+                        href={`/api/attachments/download/${att.storagePath}`}
                         download={att.fileName}
                         className="btn-icon" 
                         title="Download" 
