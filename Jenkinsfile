@@ -115,28 +115,47 @@ pipeline {
         }
     }
 }
-        stage('Push Docker Images') {
-            when {
-                expression { env.SKIP_PIPELINE != 'true' }
+       
+        
+stage('Push Docker Images') {
+    when {
+        expression { env.SKIP_PIPELINE != 'true' }
+    }
+    steps {
+        script {
+            def tag = sh(
+                script: 'git rev-parse --short=7 HEAD',
+                returnStdout: true
+            ).trim()
+
+            if (!tag) {
+                error 'Could not determine Git commit SHA for Docker push.'
             }
-            steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'DH_USER',
-                        passwordVariable: 'DH_TOKEN'
-                    )
-                ]) {
-                    sh '''
-                        set +x
-                        echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin
-                        docker push ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${IMAGE_TAG}
-                        docker push ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${IMAGE_TAG}
-                        docker logout
-                    '''
-                }
+
+            echo "Pushing Docker images with tag: ${tag}"
+
+            withCredentials([
+                usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DH_USER',
+                    passwordVariable: 'DH_TOKEN'
+                )
+            ]) {
+                sh """
+                    set -eu
+                    set +x
+
+                    docker login -u "\$DH_USER" --password-stdin <<< "\$DH_TOKEN"
+
+                    docker push ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${tag}
+                    docker push ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${tag}
+
+                    docker logout
+                """
             }
         }
+    }
+}
 
         stage('Update Kubernetes Manifests') {
             when {
