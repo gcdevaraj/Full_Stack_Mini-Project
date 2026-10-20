@@ -145,7 +145,7 @@ stage('Push Docker Images') {
                     set -eu
                     set +x
 
-                    docker login -u "\$DH_USER" --password-stdin <<< "\$DH_TOKEN"
+                    printf '%s' "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin
 
                     docker push ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${tag}
                     docker push ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${tag}
