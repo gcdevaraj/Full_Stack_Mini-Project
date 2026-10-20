@@ -20,21 +20,16 @@ pipeline {
     }
 
     stages {
-        stage('Checkout') {
+       stage('Checkout') {
     steps {
         checkout scm
-
         script {
             env.IMAGE_TAG = sh(
                 script: 'git rev-parse --short=7 HEAD',
                 returnStdout: true
             ).trim()
 
-            if (!env.IMAGE_TAG?.trim()) {
-                error 'IMAGE_TAG is empty. Cannot build Docker images.'
-            }
-
-            echo "Building PulseTask images with tag: ${env.IMAGE_TAG}"
+            echo "Resolved Git commit: ${env.IMAGE_TAG}"
         }
     }
 }
@@ -94,22 +89,30 @@ pipeline {
             }
         }
 
-        stage('Build Docker Images') {
+     stage('Build Docker Images') {
     when {
         expression { env.SKIP_PIPELINE != 'true' }
     }
     steps {
-        sh '''
-            set -eu
+        script {
+            def tag = sh(
+                script: 'git rev-parse --short=7 HEAD',
+                returnStdout: true
+            ).trim()
 
-            if [ -z "$IMAGE_TAG" ]; then
-                echo "ERROR: IMAGE_TAG is empty"
-                exit 1
-            fi
+            if (!tag) {
+                error 'Could not determine Git commit SHA.'
+            }
 
-            docker build -t "${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${IMAGE_TAG}" ./frontend
-            docker build -t "${DOCKERHUB_USER}/${BACKEND_IMAGE}:${IMAGE_TAG}" ./backend
-        '''
+            env.IMAGE_TAG = tag
+            echo "Building Docker images with tag: ${tag}"
+
+            sh """
+                set -eu
+                docker build -t ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${tag} ./frontend
+                docker build -t ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${tag} ./backend
+            """
+        }
     }
 }
         stage('Push Docker Images') {
