@@ -157,50 +157,57 @@ stage('Push Docker Images') {
     }
 }
 
-        stage('Update Kubernetes Manifests') {
-            when {
-                expression { env.SKIP_PIPELINE != 'true' }
+        
+stage('Update Kubernetes Manifests') {
+    when {
+        expression { env.SKIP_PIPELINE != 'true' }
+    }
+    steps {
+        script {
+            def tag = sh(
+                script: 'git rev-parse --short=7 HEAD',
+                returnStdout: true
+            ).trim()
+
+            if (!tag) {
+                error 'Could not determine Git commit SHA for manifest update.'
             }
-            steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'github-write-creds',
-                        usernameVariable: 'GH_USER',
-                        passwordVariable: 'GH_TOKEN'
-                    )
-                ]) {
-                    sh '''
-                        set -eu
 
-                        sed -i -E \
-                          "s|(image: devaraj74/pulsetask-frontend:).*|\\1${IMAGE_TAG}|" \
-                          kubernetes/base/frontend.yaml
+            echo "Updating Kubernetes manifests to image tag: ${tag}"
 
-                        sed -i -E \
-                          "s|(image: devaraj74/pulsetask-backend:).*|\\1${IMAGE_TAG}|" \
-                          kubernetes/base/backend.yaml
+            withCredentials([
+                usernamePassword(
+                    credentialsId: 'github-write-creds',
+                    usernameVariable: 'GH_USER',
+                    passwordVariable: 'GH_TOKEN'
+                )
+            ]) {
+                sh """
+                    set -eu
 
-                        git config user.name "PulseTask Jenkins"
-                        git config user.email "jenkins@users.noreply.github.com"
+                    sed -i 's|image: devaraj74/pulsetask-frontend:.*|image: devaraj74/pulsetask-frontend:${tag}|' kubernetes/base/frontend.yaml
+                    sed -i 's|image: devaraj74/pulsetask-backend:.*|image: devaraj74/pulsetask-backend:${tag}|' kubernetes/base/backend.yaml
 
-                        git add kubernetes/base/frontend.yaml kubernetes/base/backend.yaml
+                    git config user.name "Jenkins CI"
+                    git config user.email "jenkins@users.noreply.github.com"
 
-                        if git diff --cached --quiet; then
-                            echo "Image tags are already up to date."
-                        else
-                            git commit -m "Update PulseTask images to ${IMAGE_TAG} [skip ci]"
+                    git add kubernetes/base/frontend.yaml kubernetes/base/backend.yaml
 
-                            AUTH=$(printf '%s' "$GH_USER:$GH_TOKEN" | base64 | tr -d '\\n')
+                    if git diff --cached --quiet; then
+                        echo "Kubernetes manifests already use image tag ${tag}"
+                        exit 0
+                    fi
 
-                            git -c http.extraheader="AUTHORIZATION: basic $AUTH" \
-                                push origin HEAD:main
+                    git commit -m "Update PulseTask images to ${tag} [skip ci]"
 
-                            unset AUTH
-                        fi
-                    '''
-                }
+                    AUTH_TOKEN=\$(printf '%s:%s' "\$GH_USER" "\$GH_TOKEN" | base64 | tr -d '\\n')
+                    git -c http.extraheader="AUTHORIZATION: basic \$AUTH_TOKEN" push origin HEAD:main
+                """
             }
         }
+    }
+}
+
     }
 
     post {
