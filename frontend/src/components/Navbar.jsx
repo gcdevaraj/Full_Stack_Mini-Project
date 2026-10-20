@@ -22,7 +22,7 @@ export default function Navbar({
         <div className="nav-brand-icon">
           <Kanban size={20} />
         </div>
-        <span>PulseTask</span>
+        <span>PulseTask Pro</span>
       </div>
 
       <nav className="nav-tabs">
