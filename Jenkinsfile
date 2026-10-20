@@ -19,17 +19,19 @@ pipeline {
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-                script {
-                    env.IMAGE_TAG = sh(
-                        script: 'git rev-parse --short=7 HEAD',
-                        returnStdout: true
-                    ).trim()
-                }
-            }
+stage('Checkout') {
+    steps {
+        checkout scm
+        script {
+            env.IMAGE_TAG = sh(
+                script: 'git rev-parse --short=7 HEAD',
+                returnStdout: true
+            ).trim()
+
+            echo "Docker image tag: ${env.IMAGE_TAG}"
         }
+    }
+}
 
         stage('Frontend Build and Test') {
     steps {
