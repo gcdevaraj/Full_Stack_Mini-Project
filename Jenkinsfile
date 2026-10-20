@@ -20,7 +20,9 @@ pipeline {
     }
 
     stages {
+
       stage('Checkout') {
+stage('Checkout') {
     steps {
         checkout scm
         script {
@@ -46,6 +48,8 @@ pipeline {
             echo "Skip pipeline: ${env.SKIP_PIPELINE}"
         }
     }
+}
+
 }
 
         stage('Frontend Build and Test') {
