@@ -1,4 +1,3 @@
-
 pipeline {
     agent any
 
@@ -20,34 +19,39 @@ pipeline {
     }
 
     stages {
-       
-stage('Checkout') {
-    steps {
-        script {
-            def commitMessage = sh(
-                script: 'git log -1 --pretty=%B',
-                returnStdout: true
-            ).trim()
+        stage('Checkout') {
+            steps {
+                script {
+                    def commitMessage = sh(
+                        script: 'git log -1 --pretty=%B',
+                        returnStdout: true
+                    ).trim()
 
-            def commitSha = sh(
-                script: 'git rev-parse HEAD',
-                returnStdout: true
-            ).trim()
+                    def commitSha = sh(
+                        script: 'git rev-parse HEAD',
+                        returnStdout: true
+                    ).trim()
 
-            if (!commitSha) {
-                error 'Could not determine Git commit SHA.'
+                    if (!(commitSha ==~ /[0-9a-fA-F]{40}/)) {
+                        error "Invalid Git commit SHA: '${commitSha}'"
+                    }
+
+                    env.IMAGE_TAG = commitSha.substring(0, 7)
+                    env.SKIP_PIPELINE =
+                        commitMessage.contains('[skip ci]') ? 'true' : 'false'
+
+                    echo "Commit message: ${commitMessage}"
+                    echo "Git SHA: ${commitSha}"
+                    echo "Docker image tag: ${env.IMAGE_TAG}"
+                    echo "Skip pipeline: ${env.SKIP_PIPELINE}"
+
+                    if (env.SKIP_PIPELINE != 'true' &&
+                        !(env.IMAGE_TAG ==~ /[0-9a-fA-F]{7}/)) {
+                        error 'Docker image tag is invalid.'
+                    }
+                }
             }
-
-            env.IMAGE_TAG = commitSha.take(7)
-            env.SKIP_PIPELINE = commitMessage.contains('[skip ci]') ? 'true' : 'false'
-
-            echo "Commit message: ${commitMessage}"
-            echo "Resolved Git commit: ${env.IMAGE_TAG}"
-            echo "Skip pipeline: ${env.SKIP_PIPELINE}"
         }
-    }
-}
-
 
         stage('Frontend Build and Test') {
             when {
@@ -112,7 +116,11 @@ stage('Checkout') {
                 script {
                     def tag = env.IMAGE_TAG
 
-                    echo "Building Docker images with tag: ${tag}"
+                    if (!(tag ==~ /[0-9a-fA-F]{7}/)) {
+                        error "Refusing to build with invalid image tag: '${tag}'"
+                    }
+
+                    echo "Building images with tag: ${tag}"
 
                     sh """
                         set -eu
@@ -131,7 +139,11 @@ stage('Checkout') {
                 script {
                     def tag = env.IMAGE_TAG
 
-                    echo "Pushing Docker images with tag: ${tag}"
+                    if (!(tag ==~ /[0-9a-fA-F]{7}/)) {
+                        error "Refusing to push with invalid image tag: '${tag}'"
+                    }
+
+                    echo "Pushing images with tag: ${tag}"
 
                     withCredentials([
                         usernamePassword(
@@ -164,7 +176,11 @@ stage('Checkout') {
                 script {
                     def tag = env.IMAGE_TAG
 
-                    echo "Updating Kubernetes manifests to image tag: ${tag}"
+                    if (!(tag ==~ /[0-9a-fA-F]{7}/)) {
+                        error "Refusing to update manifests with invalid tag: '${tag}'"
+                    }
+
+                    echo "Updating manifests to tag: ${tag}"
 
                     withCredentials([
                         usernamePassword(
@@ -175,9 +191,14 @@ stage('Checkout') {
                     ]) {
                         sh """
                             set -eu
+                            set +x
 
                             sed -i 's|image: devaraj74/pulsetask-frontend:.*|image: devaraj74/pulsetask-frontend:${tag}|' kubernetes/base/frontend.yaml
+
                             sed -i 's|image: devaraj74/pulsetask-backend:.*|image: devaraj74/pulsetask-backend:${tag}|' kubernetes/base/backend.yaml
+
+                            grep -F 'image: devaraj74/pulsetask-frontend:${tag}' kubernetes/base/frontend.yaml
+                            grep -F 'image: devaraj74/pulsetask-backend:${tag}' kubernetes/base/backend.yaml
 
                             git config user.name "Jenkins CI"
                             git config user.email "jenkins@users.noreply.github.com"
@@ -185,7 +206,7 @@ stage('Checkout') {
                             git add kubernetes/base/frontend.yaml kubernetes/base/backend.yaml
 
                             if git diff --cached --quiet; then
-                                echo "Kubernetes manifests already use image tag ${tag}"
+                                echo "Manifests already use tag ${tag}"
                                 exit 0
                             fi
 
@@ -211,7 +232,9 @@ stage('Checkout') {
                 if (env.SKIP_PIPELINE == 'true') {
                     echo 'Manifest-only commit skipped successfully.'
                 } else {
-                    echo "Images published and Kubernetes manifests updated to ${env.IMAGE_TAG}"
+                    echo "Frontend image: ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${env.IMAGE_TAG}"
+                    echo "Backend image: ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${env.IMAGE_TAG}"
+                    echo 'Kubernetes manifests updated.'
                 }
             }
         }
