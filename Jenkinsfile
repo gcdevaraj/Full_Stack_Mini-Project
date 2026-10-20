@@ -11,7 +11,6 @@ pipeline {
         DOCKERHUB_USER = 'devaraj74'
         FRONTEND_IMAGE = 'pulsetask-frontend'
         BACKEND_IMAGE = 'pulsetask-backend'
-        IMAGE_TAG = ''
     }
 
     triggers {
@@ -27,6 +26,10 @@ stage('Checkout') {
                 script: 'git rev-parse --short=7 HEAD',
                 returnStdout: true
             ).trim()
+
+            if (!env.IMAGE_TAG) {
+                error 'IMAGE_TAG is empty. Cannot build Docker images.'
+            }
 
             echo "Docker image tag: ${env.IMAGE_TAG}"
         }
