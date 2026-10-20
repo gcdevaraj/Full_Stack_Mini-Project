@@ -50,15 +50,17 @@ pipeline {
             }
         }
 
-        stage('SonarQube Analysis') {
-            steps {
-                dir('backend') {
-                    withSonarQubeEnv('SonarQube') {
-                        sh './mvnw -B sonar:sonar -Dsonar.projectKey=pulsetask'
-                    }
-                }
+      
+stage('SonarQube Analysis') {
+    steps {
+        dir('backend') {
+            withSonarQubeEnv('SonarQube') {
+                sh './mvnw -B org.sonarsource.scanner.maven:sonar-maven-plugin:5.2.0.4988:sonar -Dsonar.projectKey=pulsetask'
             }
         }
+    }
+}
+
 
         stage('Quality Gate') {
             steps {
