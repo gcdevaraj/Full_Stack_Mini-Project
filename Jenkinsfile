@@ -19,39 +19,37 @@ pipeline {
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                script {
-                    def commitMessage = sh(
-                        script: 'git log -1 --pretty=%B',
-                        returnStdout: true
-                    ).trim()
+stage('Checkout') {
+    steps {
+        script {
+            def commitMessage = sh(
+                script: 'git log -1 --pretty=%B',
+                returnStdout: true
+            ).trim()
 
-                    def commitSha = sh(
-                        script: 'git rev-parse HEAD',
-                        returnStdout: true
-                    ).trim()
+            def commitSha = sh(
+                script: 'git rev-parse --verify HEAD',
+                returnStdout: true
+            ).trim()
 
-                    if (!(commitSha ==~ /[0-9a-fA-F]{40}/)) {
-                        error "Invalid Git commit SHA: '${commitSha}'"
-                    }
+            echo "DEBUG commit SHA: [${commitSha}]"
+            echo "DEBUG commit SHA length: ${commitSha.length()}"
+            echo "DEBUG commit message: ${commitMessage}"
 
-                    env.IMAGE_TAG = commitSha.substring(0, 7)
-                    env.SKIP_PIPELINE =
-                        commitMessage.contains('[skip ci]') ? 'true' : 'false'
-
-                    echo "Commit message: ${commitMessage}"
-                    echo "Git SHA: ${commitSha}"
-                    echo "Docker image tag: ${env.IMAGE_TAG}"
-                    echo "Skip pipeline: ${env.SKIP_PIPELINE}"
-
-                    if (env.SKIP_PIPELINE != 'true' &&
-                        !(env.IMAGE_TAG ==~ /[0-9a-fA-F]{7}/)) {
-                        error 'Docker image tag is invalid.'
-                    }
-                }
+            if (!commitSha || commitSha.length() < 7) {
+                error "Cannot determine a valid Git commit SHA: '${commitSha}'"
             }
+
+            env.IMAGE_TAG = commitSha.take(7)
+            env.SKIP_PIPELINE =
+                commitMessage.contains('[skip ci]') ? 'true' : 'false'
+
+            echo "Docker image tag: ${env.IMAGE_TAG}"
+            echo "Skip pipeline: ${env.SKIP_PIPELINE}"
         }
+    }
+}
+
 
         stage('Frontend Build and Test') {
             when {
