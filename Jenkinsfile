@@ -31,7 +31,7 @@ stages {
                     error "Invalid Jenkins build number: '${env.BUILD_NUMBER}'"
                 }
 
-                env.IMAGE_TAG = env.BUILD_NUMBER
+                env.IMAGE_TAG = "${env.BUILD_NUMBER}"
                 env.SKIP_PIPELINE =
                     commitMessage.contains('[skip ci]') ? 'true' : 'false'
 
@@ -103,7 +103,7 @@ stages {
         }
         steps {
             script {
-                def tag = env.IMAGE_TAG
+                def tag = "${env.BUILD_NUMBER}"
 
                 if (!tag || !(tag ==~ /[1-9][0-9]*/)) {
                     error "Invalid Jenkins build number for image tag: '${tag}'"
@@ -126,7 +126,7 @@ stages {
         }
         steps {
             script {
-                def tag = env.IMAGE_TAG
+                def tag = "${env.BUILD_NUMBER}"
 
                 if (!tag || !(tag ==~ /[1-9][0-9]*/)) {
                     error "Invalid Jenkins build number for image tag: '${tag}'"
@@ -163,7 +163,7 @@ stages {
         }
         steps {
             script {
-                def tag = env.IMAGE_TAG
+                def tag = "${env.BUILD_NUMBER}"
 
                 if (!tag || !(tag ==~ /[1-9][0-9]*/)) {
                     error "Invalid Jenkins build number for image tag: '${tag}'"
