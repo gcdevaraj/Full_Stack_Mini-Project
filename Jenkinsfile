@@ -19,34 +19,33 @@ pipeline {
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                script {
-                    def commitMessage = sh(
-                        script: 'git log -1 --pretty=%B',
-                        returnStdout: true
-                    ).trim()
+     
+stage('Checkout') {
+    steps {
+        script {
+            def commitMessage = sh(
+                script: 'git log -1 --pretty=%B',
+                returnStdout: true
+            ).trim()
 
-                    def commitSha = sh(
-                        script: 'git rev-parse --verify HEAD',
-                        returnStdout: true
-                    ).trim()
+            def commitSha = sh(
+                script: 'git rev-parse --verify HEAD',
+                returnStdout: true
+            ).trim()
 
-                    if (!(commitSha ==~ /[0-9a-fA-F]{40}/)) {
-                        error "Invalid Git commit SHA: ${commitSha}"
-                    }
-
-                    env.IMAGE_TAG =
-                        "b${env.BUILD_NUMBER}-${commitSha.take(7)}"
-
-                    env.SKIP_PIPELINE =
-                        commitMessage.contains('[skip ci]') ? 'true' : 'false'
-
-                    echo "Image tag: ${env.IMAGE_TAG}"
-                    echo "Skip pipeline: ${env.SKIP_PIPELINE}"
-                }
+            if (!(commitSha ==~ /[0-9a-fA-F]{40}/)) {
+                error "Invalid Git commit SHA: '${commitSha}'"
             }
+
+            env.IMAGE_TAG = "b${env.BUILD_NUMBER}-${commitSha.take(7)}"
+            env.SKIP_PIPELINE =
+                commitMessage.contains('[skip ci]') ? 'true' : 'false'
+
+            echo "Docker image tag: ${env.IMAGE_TAG}"
+            echo "Skip pipeline: ${env.SKIP_PIPELINE}"
         }
+    }
+}
 
         stage('Frontend Build and Test') {
             when {
@@ -103,52 +102,65 @@ pipeline {
             }
         }
 
-        stage('Build Docker Images') {
-            when {
-                expression { env.SKIP_PIPELINE != 'true' }
+       
+stage('Build Docker Images') {
+    when {
+        expression { env.SKIP_PIPELINE != 'true' }
+    }
+    steps {
+        script {
+            def tag = env.IMAGE_TAG
+
+            if (!tag?.trim()) {
+                error 'IMAGE_TAG is empty. Check the Checkout stage.'
             }
-            steps {
-                sh '''
+
+            echo "Building Docker images with tag: ${tag}"
+
+            sh """
+                set -eu
+                docker build -t ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${tag} ./frontend
+                docker build -t ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${tag} ./backend
+            """
+        }
+    }
+}
+
+
+       
+stage('Push Docker Images') {
+    when {
+        expression { env.SKIP_PIPELINE != 'true' }
+    }
+    steps {
+        script {
+            def tag = env.IMAGE_TAG
+
+            if (!tag?.trim()) {
+                error 'IMAGE_TAG is empty. Check the Checkout stage.'
+            }
+
+            withCredentials([
+                usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DH_USER',
+                    passwordVariable: 'DH_TOKEN'
+                )
+            ]) {
+                sh """
                     set -eu
-
-                    docker build \
-                      -t "$DOCKERHUB_USER/$FRONTEND_IMAGE:$IMAGE_TAG" \
-                      ./frontend
-
-                    docker build \
-                      -t "$DOCKERHUB_USER/$BACKEND_IMAGE:$IMAGE_TAG" \
-                      ./backend
-                '''
+                    set +x
+                    printf '%s' "\$DH_TOKEN" |
+                        docker login -u "\$DH_USER" --password-stdin
+                    docker push ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${tag}
+                    docker push ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${tag}
+                    docker logout
+                """
             }
         }
+    }
+}
 
-        stage('Push Docker Images') {
-            when {
-                expression { env.SKIP_PIPELINE != 'true' }
-            }
-            steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'DH_USER',
-                        passwordVariable: 'DH_TOKEN'
-                    )
-                ]) {
-                    sh '''
-                        set -eu
-                        set +x
-
-                        printf '%s' "$DH_TOKEN" |
-                          docker login -u "$DH_USER" --password-stdin
-
-                        docker push "$DOCKERHUB_USER/$FRONTEND_IMAGE:$IMAGE_TAG"
-                        docker push "$DOCKERHUB_USER/$BACKEND_IMAGE:$IMAGE_TAG"
-
-                        docker logout
-                    '''
-                }
-            }
-        }
 
         stage('Update Kubernetes Manifests') {
             when {
