@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -19,33 +20,31 @@ pipeline {
     }
 
     stages {
-     
-stage('Checkout') {
-    steps {
-        script {
-            def commitMessage = sh(
-                script: 'git log -1 --pretty=%B',
-                returnStdout: true
-            ).trim()
+        stage('Checkout') {
+            steps {
+                script {
+                    def commitMessage = sh(
+                        script: 'git log -1 --pretty=%B',
+                        returnStdout: true
+                    ).trim()
 
-            def commitSha = sh(
-                script: 'git rev-parse --verify HEAD',
-                returnStdout: true
-            ).trim()
+                    def commitSha = sh(
+                        script: 'git rev-parse --verify HEAD',
+                        returnStdout: true
+                    ).trim()
 
-            if (!(commitSha ==~ /[0-9a-fA-F]{40}/)) {
-                error "Invalid Git commit SHA: '${commitSha}'"
+                    if (!(commitSha ==~ /[0-9a-fA-F]{40}/)) {
+                        error "Invalid Git commit SHA: ${commitSha}"
+                    }
+
+                    env.IMAGE_TAG = "b${env.BUILD_NUMBER}-${commitSha.take(7)}"
+                    env.SKIP_PIPELINE = commitMessage.contains('[skip ci]') ? 'true' : 'false'
+
+                    echo "Image tag: ${env.IMAGE_TAG}"
+                    echo "Skip pipeline: ${env.SKIP_PIPELINE}"
+                }
             }
-
-            env.IMAGE_TAG = "b${env.BUILD_NUMBER}-${commitSha.take(7)}"
-            env.SKIP_PIPELINE =
-                commitMessage.contains('[skip ci]') ? 'true' : 'false'
-
-            echo "Docker image tag: ${env.IMAGE_TAG}"
-            echo "Skip pipeline: ${env.SKIP_PIPELINE}"
         }
-    }
-}
 
         stage('Frontend Build and Test') {
             when {
@@ -102,107 +101,119 @@ stage('Checkout') {
             }
         }
 
-       
-stage('Build Docker Images') {
-    when {
-        expression { env.SKIP_PIPELINE != 'true' }
-    }
-    steps {
-        script {
-            def tag = env.IMAGE_TAG
-
-            if (!tag?.trim()) {
-                error 'IMAGE_TAG is empty. Check the Checkout stage.'
+        stage('Build Docker Images') {
+            when {
+                expression { env.SKIP_PIPELINE != 'true' }
             }
+            steps {
+                script {
+                    def commitSha = sh(
+                        script: 'git rev-parse --short=7 HEAD',
+                        returnStdout: true
+                    ).trim()
 
-            echo "Building Docker images with tag: ${tag}"
+                    def tag = "b${env.BUILD_NUMBER}-${commitSha}"
+                    env.IMAGE_TAG = tag
 
-            sh """
-                set -eu
-                docker build -t ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${tag} ./frontend
-                docker build -t ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${tag} ./backend
-            """
-        }
-    }
-}
+                    echo "Building images with tag: ${tag}"
 
-
-       
-stage('Push Docker Images') {
-    when {
-        expression { env.SKIP_PIPELINE != 'true' }
-    }
-    steps {
-        script {
-            def tag = env.IMAGE_TAG
-
-            if (!tag?.trim()) {
-                error 'IMAGE_TAG is empty. Check the Checkout stage.'
-            }
-
-            withCredentials([
-                usernamePassword(
-                    credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'DH_USER',
-                    passwordVariable: 'DH_TOKEN'
-                )
-            ]) {
-                sh """
-                    set -eu
-                    set +x
-                    printf '%s' "\$DH_TOKEN" |
-                        docker login -u "\$DH_USER" --password-stdin
-                    docker push ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${tag}
-                    docker push ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${tag}
-                    docker logout
-                """
+                    sh """
+                        set -eu
+                        docker build -t ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${tag} ./frontend
+                        docker build -t ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${tag} ./backend
+                    """
+                }
             }
         }
-    }
-}
 
+        stage('Push Docker Images') {
+            when {
+                expression { env.SKIP_PIPELINE != 'true' }
+            }
+            steps {
+                script {
+                    def commitSha = sh(
+                        script: 'git rev-parse --short=7 HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    def tag = "b${env.BUILD_NUMBER}-${commitSha}"
+                    env.IMAGE_TAG = tag
+
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: 'dockerhub-creds',
+                            usernameVariable: 'DH_USER',
+                            passwordVariable: 'DH_TOKEN'
+                        )
+                    ]) {
+                        sh """
+                            set -eu
+                            set +x
+
+                            printf '%s' "\$DH_TOKEN" |
+                                docker login -u "\$DH_USER" --password-stdin
+
+                            docker push ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${tag}
+                            docker push ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${tag}
+
+                            docker logout
+                        """
+                    }
+
+                    echo "Successfully pushed tag: ${tag}"
+                }
+            }
+        }
 
         stage('Update Kubernetes Manifests') {
             when {
                 expression { env.SKIP_PIPELINE != 'true' }
             }
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'github-write-creds',
-                        usernameVariable: 'GH_USER',
-                        passwordVariable: 'GH_TOKEN'
-                    )
-                ]) {
-                    sh '''
-                        set -eu
-                        set +x
+                script {
+                    def commitSha = sh(
+                        script: 'git rev-parse --short=7 HEAD',
+                        returnStdout: true
+                    ).trim()
 
-                        sed -i "s|image: devaraj74/pulsetask-frontend:.*|image: devaraj74/pulsetask-frontend:$IMAGE_TAG|" kubernetes/base/frontend.yaml
+                    def tag = "b${env.BUILD_NUMBER}-${commitSha}"
+                    env.IMAGE_TAG = tag
 
-                        sed -i "s|image: devaraj74/pulsetask-backend:.*|image: devaraj74/pulsetask-backend:$IMAGE_TAG|" kubernetes/base/backend.yaml
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: 'github-write-creds',
+                            usernameVariable: 'GH_USER',
+                            passwordVariable: 'GH_TOKEN'
+                        )
+                    ]) {
+                        sh """
+                            set -eu
+                            set +x
 
-                        grep -F "image: devaraj74/pulsetask-frontend:$IMAGE_TAG" kubernetes/base/frontend.yaml
-                        grep -F "image: devaraj74/pulsetask-backend:$IMAGE_TAG" kubernetes/base/backend.yaml
+                            sed -i 's|image: devaraj74/pulsetask-frontend:.*|image: devaraj74/pulsetask-frontend:${tag}|' kubernetes/base/frontend.yaml
 
-                        git config user.name "Jenkins CI"
-                        git config user.email "jenkins@users.noreply.github.com"
+                            sed -i 's|image: devaraj74/pulsetask-backend:.*|image: devaraj74/pulsetask-backend:${tag}|' kubernetes/base/backend.yaml
 
-                        git add kubernetes/base/frontend.yaml kubernetes/base/backend.yaml
+                            grep -F 'image: devaraj74/pulsetask-frontend:${tag}' kubernetes/base/frontend.yaml
+                            grep -F 'image: devaraj74/pulsetask-backend:${tag}' kubernetes/base/backend.yaml
 
-                        if git diff --cached --quiet; then
-                            echo "Manifests already use $IMAGE_TAG"
-                            exit 0
-                        fi
+                            git config user.name "Jenkins CI"
+                            git config user.email "jenkins@users.noreply.github.com"
 
-                        git commit -m "Update PulseTask images to $IMAGE_TAG [skip ci]"
+                            git add kubernetes/base/frontend.yaml kubernetes/base/backend.yaml
 
-                        AUTH_TOKEN=$(printf '%s:%s' "$GH_USER" "$GH_TOKEN" |
-                            base64 | tr -d '\\n')
+                            if git diff --cached --quiet; then
+                                echo "Manifests already use ${tag}"
+                            else
+                                git commit -m "Update PulseTask images to ${tag} [skip ci]"
 
-                        git -c http.extraheader="AUTHORIZATION: basic $AUTH_TOKEN" \
-                            push origin HEAD:main
-                    '''
+                                AUTH_TOKEN=\$(printf '%s:%s' "\$GH_USER" "\$GH_TOKEN" | base64 | tr -d '\\n')
+
+                                git -c http.extraheader="AUTHORIZATION: basic \$AUTH_TOKEN" push origin HEAD:main
+                            fi
+                        """
+                    }
                 }
             }
         }
@@ -229,15 +240,11 @@ stage('Push Docker Images') {
                         python3 - <<'PY'
 import json
 import os
-import urllib.error
 import urllib.parse
 import urllib.request
 
 namespace = "devaraj74"
-repositories = [
-    "pulsetask-frontend",
-    "pulsetask-backend",
-]
+repositories = ["pulsetask-frontend", "pulsetask-backend"]
 
 def request_json(url, method="GET", payload=None, token=None):
     data = None
@@ -250,31 +257,46 @@ def request_json(url, method="GET", payload=None, token=None):
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    req = urllib.request.Request(
+    request = urllib.request.Request(
         url, data=data, headers=headers, method=method
     )
 
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with urllib.request.urlopen(request, timeout=30) as response:
         body = response.read()
         return json.loads(body) if body else {}
 
-user = os.environ["RETENTION_USER"]
-secret = os.environ["RETENTION_TOKEN"]
+def manifest_tag(filename):
+    with open(filename, encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if line.startswith("image:"):
+                image = line.split(":", 1)[1].strip()
+                return image.rsplit(":", 1)[-1]
+    raise RuntimeError(f"No image tag found in {filename}")
+
+# Protect the tags currently referenced by the GitOps manifests.
+protected = {
+    "pulsetask-frontend": manifest_tag("kubernetes/base/frontend.yaml"),
+    "pulsetask-backend": manifest_tag("kubernetes/base/backend.yaml"),
+}
 
 auth = request_json(
     "https://hub.docker.com/v2/auth/token",
     method="POST",
-    payload={"identifier": user, "secret": secret},
+    payload={
+        "identifier": os.environ["RETENTION_USER"],
+        "secret": os.environ["RETENTION_TOKEN"],
+    },
 )
 
 token = auth.get("access_token")
 if not token:
-    raise RuntimeError("Docker Hub authentication did not return an access token.")
+    raise RuntimeError("Docker Hub authentication returned no access token.")
 
 retained = {}
 
 for repository in repositories:
-    print(f"Checking Docker Hub repository: {repository}")
+    print(f"Checking {repository}")
 
     url = (
         f"https://hub.docker.com/v2/namespaces/{namespace}"
@@ -288,20 +310,28 @@ for repository in repositories:
         tags.extend(page.get("results", []))
         url = page.get("next")
 
-    # Keep the two most recently updated tags.
     tags.sort(
         key=lambda item: item.get("last_updated") or "",
         reverse=True,
     )
 
-    keep = tags[:2]
-    retained[repository] = [item["name"] for item in keep]
+    # Retain the two newest tags and the manifest's currently referenced tag.
+    keep = {item["name"] for item in tags[:2]}
+    keep.add(protected[repository])
 
-    print(f"Keeping {retained[repository]}")
+    available = {item["name"] for item in tags}
+    missing = keep - available
+    if missing:
+        print(f"Protected tag(s) not found in registry: {sorted(missing)}")
 
-    for old_tag in tags[2:]:
-        name = old_tag.get("name", "")
-        if not name:
+    retained[repository] = sorted(keep & available)
+
+    print(f"Keeping {repository}: {retained[repository]}")
+
+    for item in tags:
+        name = item.get("name", "")
+
+        if not name or name in keep:
             continue
 
         encoded_name = urllib.parse.quote(name, safe="")
@@ -310,21 +340,21 @@ for repository in repositories:
             f"/repositories/{repository}/tags/{encoded_name}"
         )
 
-        print(f"Deleting old Docker Hub tag: {repository}:{name}")
+        print(f"Deleting old tag: {repository}:{name}")
 
-        req = urllib.request.Request(
+        request = urllib.request.Request(
             delete_url,
             headers={"Authorization": f"Bearer {token}"},
             method="DELETE",
         )
 
-        with urllib.request.urlopen(req, timeout=30):
+        with urllib.request.urlopen(request, timeout=30):
             pass
 
-with open("retained-tags.json", "w") as output:
+with open("retained-tags.json", "w", encoding="utf-8") as output:
     json.dump(retained, output)
 
-print("Docker Hub retention completed.")
+print("Docker Hub image retention completed.")
 PY
                     '''
                 }
@@ -343,7 +373,7 @@ PY
 import json
 import subprocess
 
-with open("retained-tags.json") as file:
+with open("retained-tags.json", encoding="utf-8") as file:
     retained = json.load(file)
 
 images = subprocess.check_output(
@@ -352,18 +382,16 @@ images = subprocess.check_output(
 ).splitlines()
 
 for repository, keep_tags in retained.items():
-    image_prefix = f"devaraj74/{repository}:"
+    prefix = f"devaraj74/{repository}:"
 
     for image in images:
-        if not image.startswith(image_prefix):
+        if not image.startswith(prefix):
             continue
 
-        tag = image[len(image_prefix):]
+        tag = image[len(prefix):]
 
         if tag in keep_tags or tag == "<none>":
             continue
-
-        print(f"Removing old local image tag: {image}")
 
         result = subprocess.run(
             ["docker", "image", "rm", image],
@@ -372,10 +400,9 @@ for repository, keep_tags in retained.items():
         )
 
         if result.returncode == 0:
-            print(f"Removed: {image}")
+            print(f"Removed local image tag: {image}")
         else:
-            print(f"Could not remove {image}: {result.stderr.strip()}")
-            print("It may still be in use; leaving it untouched.")
+            print(f"Keeping {image}: {result.stderr.strip()}")
 
 print("Local Docker image cleanup completed.")
 PY
@@ -396,7 +423,7 @@ PY
                 } else {
                     echo "Frontend image: ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${env.IMAGE_TAG}"
                     echo "Backend image: ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${env.IMAGE_TAG}"
-                    echo 'Manifests updated; retention stages completed.'
+                    echo 'Manifest update and retention stages completed.'
                 }
             }
         }
